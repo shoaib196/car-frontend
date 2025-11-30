@@ -46,7 +46,7 @@ export function CarDetails({ cars }: CarDetailsProps) {
     setCurrent(api.selectedScrollSnap() + 1);
 
     api.on("select", () => setCurrent(api.selectedScrollSnap() + 1));
-  }, [api]);
+  }, [api, id]);
 
 
   if (!car) {
