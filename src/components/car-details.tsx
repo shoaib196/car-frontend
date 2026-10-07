@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ContactButtons } from './contact-buttons';
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from './ui/carousel';
+import { getFullImageUrl } from '../services/cars';
 import {
   Calendar,
   Fuel,
@@ -59,17 +60,21 @@ export function CarDetails({ cars }: CarDetailsProps) {
       </div>
     );
   }
-  const formatPrice = (price: number) => {
+  const formatPrice = (price: number | string) => {
+    const num = typeof price === 'string' ? parseFloat(price) : price;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'JPY',
       minimumFractionDigits: 0,
-    }).format(price);
+    }).format(isNaN(num) ? 0 : num);
   };
 
   const formatMileage = (mileage: number) => {
-    return new Intl.NumberFormat('en-US').format(mileage);
+    return new Intl.NumberFormat('en-US').format(mileage || 0);
   };
+
+  const images = Array.isArray(car.images) ? car.images : [];
+  const features = Array.isArray(car.features) ? car.features : [];
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -89,24 +94,24 @@ export function CarDetails({ cars }: CarDetailsProps) {
           {/* Hidden Carousel for logic */}
           <Carousel setApi={setApi} className="w-full" style={{ height: 0, overflow: 'hidden' }}>
             <CarouselContent>
-              {car.images.map((image) => (
+              {images.map((image) => (
                 <CarouselItem key={image.id}>
-                  <img src={image.url} alt="" style={{ width: '100%', height: 'auto' }} />
+                  <img src={getFullImageUrl(image.url)} alt="" style={{ width: '100%', height: 'auto' }} />
                 </CarouselItem>
               ))}
             </CarouselContent>
           </Carousel>
 
           {/* New Image Module Here */}
-          {car.images.length === 0 && (
+          {images.length === 0 && (
             <div className="w-full h-full bg-gray-200 flex items-center justify-center rounded-lg aspect-video mb-6">
               <span className="text-gray-500">No images available</span>
             </div>
           )}
-          {car.images.length > 0 && current > 0 ? (
+          {images.length > 0 && current > 0 ? (
             <div className="mt-4 mb-6" style={{ height: '384px' }}>
               <img
-                src={car.images[current - 1].url}
+                src={getFullImageUrl(images[current - 1]?.url)}
                 alt={`Current view: ${car.brand} ${car.model}`}
                 style={{
                   width: '100%',
@@ -117,17 +122,17 @@ export function CarDetails({ cars }: CarDetailsProps) {
                 }}
               />
             </div>
-          ) : car.images.length > 0 && (
+          ) : images.length > 0 && (
             <div className="mt-4 mb-6" style={{ height: '384px' }} />
           )}
 
-          {car.images.length > 0 && (
+          {images.length > 0 && (
             <div className="flex items-center justify-center gap-4 mb-6">
               <Button onClick={() => api?.scrollPrev()} variant="outline" size="sm">
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <div className="flex items-center">
-                {car.images.map((image, index) => (
+                {images.map((image, index) => (
                   <button
                     key={index}
                     onClick={() => api?.scrollTo(index)}
@@ -207,17 +212,19 @@ export function CarDetails({ cars }: CarDetailsProps) {
           </div>
 
           {/* Features */}
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h3 className="mb-4">Features</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {car.features.map((feature, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <CarIcon className="w-4 h-4 text-primary" />
-                  <span>{feature}</span>
-                </div>
-              ))}
+          {features.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow-md">
+              <h3 className="mb-4">Features</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {features.map((feature, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <CarIcon className="w-4 h-4 text-primary" />
+                    <span>{feature}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Sidebar */}
