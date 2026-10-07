@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { type Car, type ImageSlider } from '@/types';
 import { Pencil, Trash2, Plus, Upload, X, Image as ImageIcon } from 'lucide-react';
-import { createCar, updateCar, deleteCar, uploadImage, uploadImageToCar, deleteImage } from '../services/cars';
+import { createCar, updateCar, deleteCar, uploadImage, uploadImageToCar, deleteImage, getFullImageUrl } from '../services/cars';
 import { createImageSlider, updateImageSlider, deleteImageSlider } from '../services/image_slider';
 
 interface AdminDashboardProps {
@@ -99,44 +99,85 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
     setEditingImageSlider(null);
   };
 
-  const handleImageUpload = async (file: File) => {
-    if (file && file.type.startsWith('image/')) {
-      if (editingCar) {
-        try {
-          const uploadResult = await uploadImageToCar(editingCar.id, file, accessToken!);
-          setFormData(prev => ({ ...prev, images: [...prev.images, uploadResult] }));
-          setImagePreviews(prev => [...prev, uploadResult.url]);
-        } catch (error) {
-          console.error('Failed to upload image:', error);
-          alert(`Failed to upload image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
+
+  const handleMultipleImageUpload = async (files: File[]) => {
+    const validImageFiles = files.filter(f => f && f.type.startsWith('image/'));
+    if (validImageFiles.length === 0) return;
+
+    if (editingCar) {
+      setIsUploadingImages(true);
+      try {
+        const newUploadedImages: { id: string; url: string }[] = [];
+        for (const file of validImageFiles) {
+          try {
+            const uploadResult = await uploadImageToCar(editingCar.id, file, accessToken!);
+            newUploadedImages.push(uploadResult);
+          } catch (err) {
+            console.error('Failed to upload image:', err);
+            alert(`Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          }
         }
-      } else {
-        setPendingUploads(prev => [...prev, file]);
-        const previewUrl = URL.createObjectURL(file);
-        setImagePreviews(prev => [...prev, previewUrl]);
-        setFormData(prev => ({ ...prev, images: [...prev.images, { id: `temp-${Date.now()}`, url: previewUrl }] }));
+        if (newUploadedImages.length > 0) {
+          setFormData(prev => ({
+            ...prev,
+            images: [...prev.images, ...newUploadedImages]
+          }));
+          setImagePreviews(prev => [
+            ...prev,
+            ...newUploadedImages.map(img => getFullImageUrl(img.url))
+          ]);
+        }
+      } catch (error) {
+        console.error('Failed to upload images:', error);
+      } finally {
+        setIsUploadingImages(false);
       }
+    } else {
+      const newItems = validImageFiles.map((file, idx) => {
+        const previewUrl = URL.createObjectURL(file);
+        return {
+          file,
+          previewUrl,
+          tempItem: { id: `temp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`, url: previewUrl }
+        };
+      });
+
+      setPendingUploads(prev => [...prev, ...newItems.map(item => item.file)]);
+      setImagePreviews(prev => [...prev, ...newItems.map(item => item.previewUrl)]);
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...newItems.map(item => item.tempItem)]
+      }));
     }
   };
 
+  const [isUploadingSliderImage, setIsUploadingSliderImage] = useState(false);
+
   const handleSliderImageUpload = async (file: File) => {
     if (file && file.type.startsWith('image/')) {
+      setIsUploadingSliderImage(true);
       try {
         const uploadResult = await uploadImage(file, accessToken!);
-        const fullUrl = uploadResult.url
+        const fullUrl = getFullImageUrl(uploadResult.url);
         setSliderFormData(prev => ({ ...prev, url: uploadResult.url }));
         setSliderImagePreview(fullUrl);
       } catch (error) {
         console.error('Failed to upload slider image:', error);
-        alert('Failed to upload image. Please try again.');
+        alert(`Failed to upload image: ${error instanceof Error ? error.message : 'Please try again.'}`);
+      } finally {
+        setIsUploadingSliderImage(false);
       }
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files) {
-      Array.from(files).forEach(file => handleImageUpload(file));
+    if (files && files.length > 0) {
+      handleMultipleImageUpload(Array.from(files));
+    }
+    if (e.target) {
+      e.target.value = '';
     }
   };
 
@@ -160,9 +201,9 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleImageUpload(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleMultipleImageUpload(Array.from(files));
     }
   };
 
@@ -188,15 +229,18 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (items) {
+      const files: File[] = [];
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.type.startsWith('image/')) {
           const file = item.getAsFile();
           if (file) {
-            handleImageUpload(file);
+            files.push(file);
           }
-          break;
         }
+      }
+      if (files.length > 0) {
+        handleMultipleImageUpload(files);
       }
     }
   };
@@ -302,23 +346,23 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
 
   const handleEdit = (car: Car) => {
     setEditingCar(car);
-    setOriginalImages(car.images);
+    setOriginalImages(car.images || []);
     setFormData({
-      brand: car.brand,
-      model: car.model,
-      year: car.year.toString(),
-      price: car.price.toString(),
-      mileage: car.mileage.toString(),
+      brand: car.brand || '',
+      model: car.model || '',
+      year: (car.year || '').toString(),
+      price: (car.price || '').toString(),
+      mileage: (car.mileage || '').toString(),
       fuelType: car.fuelType,
       transmission: car.transmission,
       bodyType: car.bodyType,
-      color: car.color,
-      location: car.location,
-      description: car.description,
-      features: car.features.join(', '),
-      images: car.images
+      color: car.color || '',
+      location: car.location || '',
+      description: car.description || '',
+      features: Array.isArray(car.features) ? car.features.join(', ') : '',
+      images: car.images || []
     });
-    setImagePreviews(car.images.map(img => img.url));
+    setImagePreviews((car.images || []).map(img => getFullImageUrl(img.url)));
     setPendingUploads([]);
     setImagesToDelete([]);
     setIsDialogOpen(true);
@@ -337,7 +381,7 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
       title: slider.title,
       description: slider.description
     });
-    setSliderImagePreview(slider.url);
+    setSliderImagePreview(getFullImageUrl(slider.url));
     setIsSliderDialogOpen(true);
   };
 
@@ -585,6 +629,7 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-20">Preview</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Alt Text</TableHead>
                   <TableHead>Description</TableHead>
@@ -594,6 +639,19 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
               <TableBody>
                 {imageSliders.map((slider) => (
                   <TableRow key={slider.id}>
+                    <TableCell>
+                      {slider.url ? (
+                        <img
+                          src={getFullImageUrl(slider.url)}
+                          alt={slider.alt || slider.title}
+                          className="w-16 h-10 object-cover rounded border"
+                        />
+                      ) : (
+                        <div className="w-16 h-10 bg-gray-100 rounded border flex items-center justify-center text-xs text-gray-400">
+                          No img
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell>{slider.title}</TableCell>
                     <TableCell>{slider.alt}</TableCell>
                     <TableCell>{slider.description}</TableCell>
@@ -751,26 +809,26 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block mb-2">Car Images</label>
+                  <label className="block mb-2 font-medium">Car Images</label>
 
                   {/* Images Display */}
                   {formData.images.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                       {formData.images.map((image, index) => (
-                        <div key={image.id} className="relative">
+                        <div key={image.id || index} className="relative group border rounded-lg overflow-hidden bg-gray-100 shadow-sm">
                           <img
-                            src={imagePreviews[index] || image.url}
+                            src={imagePreviews[index] || getFullImageUrl(image.url)}
                             alt={`Car preview ${index + 1}`}
-                            className="w-full h-32 object-cover rounded-lg"
+                            className="w-full h-28 object-cover"
                           />
                           <Button
                             type="button"
                             variant="destructive"
                             size="sm"
-                            className="absolute top-2 right-2"
+                            className="absolute top-2 right-2 h-7 w-7 p-0 rounded-full"
                             onClick={() => removeImage(index)}
                           >
-                            <X className="w-3 h-3" />
+                            <X className="w-3.5 h-3.5" />
                           </Button>
                         </div>
                       ))}
@@ -779,31 +837,42 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
 
                   {/* Image Upload Area */}
                   <div
-                    className={`relative border-2 border-dashed rounded-lg p-6 transition-colors ${isDragOver
+                    className={`relative border-2 border-dashed rounded-lg p-6 transition-colors cursor-pointer ${isDragOver
                       ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 hover:border-gray-400'
+                      : 'border-gray-300 hover:border-gray-400 bg-gray-50/50'
                       }`}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onPaste={handlePaste}
+                    onClick={() => fileInputRef.current?.click()}
                   >
                     <div className="text-center">
-                      <ImageIcon className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                      <p className="text-gray-600 mb-2">
-                        Drag and drop images here, or click to select
+                      <ImageIcon className="w-10 h-10 mx-auto text-gray-400 mb-2" />
+                      <p className="text-gray-700 font-medium text-sm mb-1">
+                        Click or drag & drop multiple images here
                       </p>
-                      <p className="text-sm text-gray-500 mb-4">
-                        You can also paste images from your clipboard (Ctrl+V)
+                      <p className="text-xs text-gray-500 mb-3">
+                        PNG, JPG, WEBP accepted • Select multiple files together
                       </p>
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => fileInputRef.current?.click()}
+                        size="sm"
+                        disabled={isUploadingImages}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
                       >
                         <Upload className="w-4 h-4 mr-2" />
-                        Choose Files
+                        {isUploadingImages ? 'Uploading...' : 'Choose Multiple Files'}
                       </Button>
+                      {formData.images.length > 0 && (
+                        <p className="text-xs text-emerald-600 font-medium mt-2">
+                          ✓ {formData.images.length} {formData.images.length === 1 ? 'image' : 'images'} ready
+                        </p>
+                      )}
                     </div>
 
                     <input
@@ -884,23 +953,36 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
                 </div>
 
                 <div>
-                  <label className="block mb-2">Slide Image</label>
+                  <label className="block mb-2 font-medium">Image URL (or select below)</label>
+                  <Input
+                    value={sliderFormData.url}
+                    onChange={(e) => {
+                      setSliderFormData(prev => ({ ...prev, url: e.target.value }));
+                      setSliderImagePreview(e.target.value);
+                    }}
+                    placeholder="https://example.com/car-image.jpg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-2 font-medium">Slide Image</label>
 
                   {/* Image Upload Area */}
                   <div
-                    className={`relative border-2 border-dashed rounded-lg p-6 transition-colors ${isSliderDragOver
+                    className={`relative border-2 border-dashed rounded-lg p-6 transition-colors cursor-pointer ${isSliderDragOver
                       ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 hover:border-gray-400'
+                      : 'border-gray-300 hover:border-gray-400 bg-gray-50/50'
                       }`}
                     onDragOver={handleSliderDragOver}
                     onDragLeave={handleSliderDragLeave}
                     onDrop={handleSliderDrop}
                     onPaste={handleSliderPaste}
+                    onClick={() => sliderFileInputRef.current?.click()}
                   >
                     {sliderImagePreview || sliderFormData.url ? (
-                      <div className="relative">
+                      <div className="relative" onClick={(e) => e.stopPropagation()}>
                         <img
-                          src={sliderImagePreview || sliderFormData.url}
+                          src={sliderImagePreview || getFullImageUrl(sliderFormData.url)}
                           alt="Slide preview"
                           className="w-full h-48 object-cover rounded-lg"
                         />
@@ -908,28 +990,33 @@ export function AdminDashboard({ cars, onCarsUpdate, imageSliders, onImageSlider
                           type="button"
                           variant="destructive"
                           size="sm"
-                          className="absolute top-2 right-2"
+                          className="absolute top-2 right-2 h-7 w-7 p-0 rounded-full"
                           onClick={removeSliderImage}
                         >
-                          <X className="w-4 h-4" />
+                          <X className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     ) : (
                       <div className="text-center">
-                        <ImageIcon className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                        <p className="text-gray-600 mb-2">
-                          Drag and drop an image here, or click to select
+                        <ImageIcon className="w-10 h-10 mx-auto text-gray-400 mb-2" />
+                        <p className="text-gray-700 font-medium text-sm mb-1">
+                          Click or drag & drop an image here
                         </p>
-                        <p className="text-sm text-gray-500 mb-4">
-                          You can also paste an image from your clipboard (Ctrl+V)
+                        <p className="text-xs text-gray-500 mb-3">
+                          PNG, JPG, WEBP accepted • Paste from clipboard (Ctrl+V)
                         </p>
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => sliderFileInputRef.current?.click()}
+                          size="sm"
+                          disabled={isUploadingSliderImage}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            sliderFileInputRef.current?.click();
+                          }}
                         >
                           <Upload className="w-4 h-4 mr-2" />
-                          Choose File
+                          {isUploadingSliderImage ? 'Uploading...' : 'Choose Image File'}
                         </Button>
                       </div>
                     )}
