@@ -36,11 +36,22 @@ export const uploadImage = async (file: File, accessToken: string): Promise<{ id
   return response.json();
 };
 
-export const uploadImageToCar = async (carId: string, file: File, accessToken: string): Promise<{ id: string; url: string }> => {
+export const getFullImageUrl = (url?: string): string => {
+  if (!url) return '/placeholder-car.jpg';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+    return url;
+  }
+  const baseUrl = API_URL || 'http://127.0.0.1:8000/';
+  const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const cleanPath = url.startsWith('/') ? url : `/${url}`;
+  return `${cleanBase}${cleanPath}`;
+};
+
+export const uploadImageToCar = async (carId: string | number, file: File, accessToken: string): Promise<{ id: string; url: string }> => {
   const formData = new FormData();
   formData.append('image', file);
 
-  const response = await fetch(`${API_URL}api/cars/${carId}/`, {
+  const response = await fetch(`${API_URL}api/cars/${carId}/image/`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,

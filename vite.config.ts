@@ -13,8 +13,14 @@
       outDir: 'dist/',
     },
     server: {
-      port: 3000,
+      port: 5173,
       open: true,
+      proxy: {
+        '/media': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true,
+        },
+      },
       watch: {
         ignored: ['**/node_modules/**', '**/.git/**'],
       },

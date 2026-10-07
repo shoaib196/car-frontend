@@ -4,6 +4,7 @@ import { Card, CardContent, CardFooter } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Calendar, Fuel, Gauge, MapPin, Palette } from 'lucide-react';
+import { getFullImageUrl } from '../services/cars';
 
 interface CarCardProps {
   car: Car;
@@ -11,23 +12,27 @@ interface CarCardProps {
 
 export function CarCard({ car }: CarCardProps) {
   const navigate = useNavigate();
-  const formatPrice = (price: number) => {
+  const formatPrice = (price: number | string) => {
+    const num = typeof price === 'string' ? parseFloat(price) : price;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'JPY',
       minimumFractionDigits: 0,
-    }).format(price);
+    }).format(isNaN(num) ? 0 : num);
   };
 
   const formatMileage = (mileage: number) => {
-    return new Intl.NumberFormat('en-US').format(mileage);
+    return new Intl.NumberFormat('en-US').format(mileage || 0);
   };
+
+  const features = Array.isArray(car.features) ? car.features : [];
+  const imageUrl = getFullImageUrl(car.images?.[0]?.url);
 
   return (
     <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
       <div className="aspect-video overflow-hidden">
         <img
-          src={car.images[0]?.url || '/placeholder-car.jpg'}
+          src={imageUrl}
           alt={`${car.brand} ${car.model}`}
           className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
         />
@@ -61,27 +66,33 @@ export function CarCard({ car }: CarCardProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-1 text-muted-foreground mb-3">
-          <MapPin className="w-4 h-4" />
-          <span>{car.location}</span>
-        </div>
+        {car.location && (
+          <div className="flex items-center gap-1 text-muted-foreground mb-3">
+            <MapPin className="w-4 h-4" />
+            <span>{car.location}</span>
+          </div>
+        )}
 
-        <p className="text-muted-foreground line-clamp-2 mb-3">
-          {car.description}
-        </p>
+        {car.description && (
+          <p className="text-muted-foreground line-clamp-2 mb-3">
+            {car.description}
+          </p>
+        )}
 
-        <div className="flex flex-wrap gap-1 mb-3">
-          {car.features.slice(0, 3).map((feature, index) => (
-            <Badge key={index} variant="outline" className="text-xs">
-              {feature}
-            </Badge>
-          ))}
-          {car.features.length > 3 && (
-            <Badge variant="outline" className="text-xs">
-              +{car.features.length - 3} more
-            </Badge>
-          )}
-        </div>
+        {features.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {features.slice(0, 3).map((feature, index) => (
+              <Badge key={index} variant="outline" className="text-xs">
+                {feature}
+              </Badge>
+            ))}
+            {features.length > 3 && (
+              <Badge variant="outline" className="text-xs">
+                +{features.length - 3} more
+              </Badge>
+            )}
+          </div>
+        )}
       </CardContent>
 
       <CardFooter className="p-4 pt-0">
